@@ -7,9 +7,11 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-import User from "../models/userModel";
-import asyncHandler from "../middlewares/asyncMiddleware";
-import appError from "../utils/appError";
+import User from "../models/userModel.js";
+import crypto from "crypto";
+import asyncHandler from "../middlewares/asyncMiddleware.js";
+import appError from "../utils/appError.js";
+import sendEmail from "../utils/sendEmail.js";
 const cookieOption = {
     secure: process.env.NODE_ENV === 'production' ? true : false,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
@@ -76,4 +78,115 @@ export const login = asyncHandler((req, res, next) => __awaiter(void 0, void 0, 
         message: "User logged in Successfully",
         user: userWithoutPassword // Send the modified user object in the response
     });
+}));
+export const logout = asyncHandler((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    res.cookie('token', null, {
+        secure: true,
+        maxAge: 0,
+        httpOnly: true
+    });
+    res.status(200).json({
+        success: true,
+        message: "User Logged Out Successfully",
+    });
+}));
+export const getLoggedUserDetails = asyncHandler((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        // Ensure that req.user.id exists and is a string
+        if (!((_a = req.user) === null || _a === void 0 ? void 0 : _a.id)) {
+            throw new appError('User ID not found in request', 400);
+        }
+        // Find the user by ID
+        const user = yield User.findById(req.user.id);
+        if (!user) {
+            throw new appError('User not found', 404);
+        }
+        // Send the user details in the response
+        res.status(200).json({
+            success: true,
+            message: 'User details retrieved successfully',
+            user: user // You might want to customize the user object before sending it back
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+export const forgetPassword = asyncHandler((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const { userEmail } = req.body;
+    // If no email send email required message
+    if (!userEmail) {
+        throw new appError("Email is required", 403);
+    }
+    try {
+        // Finding the user via email
+        const user = yield User.findOne({ userEmail });
+        // If no user found throw the error
+        if (!user) {
+            throw new appError("User not found enter valid email", 403);
+        }
+        // Generating Jwt token 
+        const resetToken = yield user.generatePasswordResetToken();
+
+        yield user.save();
+
+        console.log("Reset Token : " , resetToken);
+        console.log("User with token saved" , user);
+        const resetTokenUrl = `${process.env.FRONTEND_URL}/resetPassword${resetToken}`;
+        const subject = "Reset Password";
+        const message = `You can reset your password by clicking ${resetTokenUrl}`;
+        yield sendEmail(userEmail, subject, message);
+        // Handle token generation and sending it via email or other logic
+        // For now, let's just return the token
+        res.status(200).json({
+            success: true,
+            message: "Token generated successfully",
+            token: resetToken
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+export const resetPassword = asyncHandler((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const { resetToken } = req.params;
+
+    if(!resetToken){
+        throw new appError("Reset Token not found");
+    }
+
+    const { newUserPassword } = req.body;
+    const forgotPasswordToken = yield crypto
+        .createHash('sha256')
+        .update(resetToken)
+        .digest('hex');
+    try {
+        if (!newUserPassword) {
+            throw new appError("New password is required to reset the password", 403);
+        }
+        console.log("Forget Password Token : ", forgotPasswordToken);
+        const user = yield User.findOne({
+            forgotPasswordToken,
+            forgotPasswordExpiry: { $gt: Date.now() },
+        });
+        if (!user) {
+            return next(new appError("Token is invalid or expired , Please try again later", 400));
+        }
+
+        console.log("User found with token :" , user);
+
+        user.userPassword = newUserPassword;
+        user.forgotPasswordToken = undefined;
+        user.forgotPasswordExpiry = undefined;
+        yield user.save();
+
+        res.json({
+            success: true,
+            message: "Password changed successfully , Now login with new password",
+        });
+    }
+    catch (e) {
+        next(e);
+    }
 }));

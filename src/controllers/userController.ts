@@ -1,7 +1,12 @@
+
 import User, {UserDocument} from "../models/userModel";
 import crypto from "crypto";
 import asyncHandler from "../middlewares/asyncMiddleware";
 import appError from "../utils/appError";
+import sendEmail from "src/utils/sendEmail";
+import { requestAuth } from "../middlewares/asyncMiddleware";
+import { NextFunction, Response } from "express";
+
 
 const cookieOption: object = {
     secure: process.env.NODE_ENV === 'production' ? true : false,
@@ -11,7 +16,7 @@ const cookieOption: object = {
 
 // @public
 // Routes POST /api/v1/users/signup
-export const signup = asyncHandler(async (req, res, next) => {
+export const signup = asyncHandler(async (req : requestAuth, res: Response<any, Record<string, any>>, next : NextFunction) => {
     const { userName, userEmail, userPassword } = req.body;
 
     // Check if any required field is missing or null
@@ -63,7 +68,7 @@ export const signup = asyncHandler(async (req, res, next) => {
 
 // @login
 // Route POST {url} = /api/v1/users/login
-export const login = asyncHandler(async(req , res , next) => {
+export const login = asyncHandler(async(req : requestAuth, res: Response<any, Record<string, any>>, next : NextFunction) => {
     const { userEmail , userPassword } = req.body;
 
     if(!userEmail || !userPassword){
@@ -89,3 +94,138 @@ export const login = asyncHandler(async(req , res , next) => {
         user: userWithoutPassword // Send the modified user object in the response
     });
 });
+
+
+export const logout = asyncHandler(async(req : requestAuth, res: Response<any, Record<string, any>>, next : NextFunction)=>{
+    res.cookie('token' , null , {
+        secure : true,
+        maxAge : 0,
+        httpOnly : true
+    })
+
+    res.status(200).json({
+        success : true,
+        message : "User Logged Out Successfully",
+    })
+});
+
+
+
+export const getLoggedUserDetails = asyncHandler(async (req : requestAuth, res: Response<any, Record<string, any>>, next : NextFunction) => {
+    try {
+        // Ensure that req.user.id exists and is a string
+        if (!req.user?.id) {
+            throw new appError('User ID not found in request', 400);
+        }
+
+        // Find the user by ID
+        const user = await User.findById(req.user.id);
+
+        if (!user) {
+            throw new appError('User not found', 404);
+        }
+
+        // Send the user details in the response
+        res.status(200).json({
+            success: true,
+            message: 'User details retrieved successfully',
+            user: user // You might want to customize the user object before sending it back
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+
+export const forgetPassword = asyncHandler(async (req : requestAuth, res: Response<any, Record<string, any>>, next : NextFunction) => {
+    const { userEmail } = req.body;
+
+    // If no email send email required message
+    if (!userEmail) {
+        throw new appError("Email is required", 403);
+    }
+
+    try {
+        // Finding the user via email
+        const user = await User.findOne({ userEmail });
+
+        // If no user found throw the error
+        if (!user) {
+            throw new appError("User not found enter valid email", 403);
+        }
+
+        // Generating Jwt token 
+        const resetToken = await user.generatePasswordResetToken();
+
+        const resetTokenUrl = `${process.env.FRONTEND_URL}/reset-password ${resetToken}`;
+
+        const subject = "Reset Password";
+        const message = `You can reset your password by clicking ${resetTokenUrl}`;
+
+
+        await sendEmail(userEmail , subject , message);
+
+        // Handle token generation and sending it via email or other logic
+        // For now, let's just return the token
+        res.status(200).json({
+            success: true,
+            message: "Token generated successfully",
+            token: resetToken
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+
+export const resetPassword = asyncHandler(async( req : requestAuth, res: Response<any, Record<string, any>>, next : NextFunction )=>{
+
+    const {resetToken} = req.params;
+
+    const {newUserPassword } = req.body;
+
+    const forgetPasswordToken = await crypto
+        .createHash('sha256')
+        .update(resetToken)
+        .digest('hex')
+
+
+    try{
+
+        if(!newUserPassword){
+            throw new appError("New password is required to reset the password" , 403);
+        }
+
+        console.log("Forget Password Token : ",forgetPasswordToken);
+
+        const user = await User.findOne({
+            forgotPasswordToken : forgetPasswordToken,
+            forgotPasswordExpiry : {$gt : Date.now()},
+        })
+
+        if(!user){
+            return next (
+                new appError("Token is invalid or expired , Please try again later",400)
+            )
+        }
+
+        user.userPassword = newUserPassword;
+
+        user.forgotPasswordToken = undefined;
+        user.forgotPasswordExpiry = undefined;
+
+        user.save();
+
+        res.json({
+            success : true,
+            message : "Password changed successfully , Now login with new password",
+        })
+
+    }catch(e){
+        res.json({
+            success : false,
+            message : "Something Bad occurred ,try again later " , e, 
+        })
+    }
+})
+

@@ -7,8 +7,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-import app from "../src/app";
-import connectionToDb from "../src/config/dbConfig";
+import app from "./app.js";
+import connectionToDb from "./config/dbConfig.js";
 const PORT = process.env.PORT || 5500;
 app.listen(PORT, () => __awaiter(void 0, void 0, void 0, function* () {
     yield connectionToDb();

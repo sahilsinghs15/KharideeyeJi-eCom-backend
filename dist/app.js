@@ -1,7 +1,7 @@
 import express from "express";
 import { config } from "dotenv";
 config();
-import userRoutes from "../src/routes/userRoutes";
+import userRoutes from "./routes/userRoutes.js";
 import cookieParser from "cookie-parser";
 const app = express();
 //Middleware
