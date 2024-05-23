@@ -19,7 +19,7 @@ const sendEmail = function (email, subject, message) {
             secure: false, // true for 465, false for other ports
             auth: {
                 user: "sahilnodemailer15@gmail.com",
-                pass: "ozcjfxldsgszlmtp",
+                pass: process.env.SMTP_PASSWORD,
             },
         };
         // Create the transporter

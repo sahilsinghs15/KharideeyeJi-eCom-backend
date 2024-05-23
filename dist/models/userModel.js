@@ -8,9 +8,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 import { Schema, model } from "mongoose";
+import dotenv from "dotenv";
+dotenv.config();
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
+import { config } from "dotenv";
 // Define the user schema
 const userSchema = new Schema({
     userName: {
